@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vector Database 101 Demo</title>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        h2 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .visualization {
+            flex: 1;
+            min-width: 600px;
+        }
+        .controls {
+            flex: 1;
+            min-width: 300px;
+        }
+        .panel {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        svg { 
+            border: 1px solid #ccc;
+            background-color: white;
+            border-radius: 5px;
+            margin-top: 15px;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px;
+            border-radius: 5px;
+            font-size: 12px;
+            pointer-events: none;
+            max-width: 200px;
+            display: none;
+        }
+        .search-container {
+            margin-bottom: 15px;
+        }
+        input, select, button {
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        input[type="text"], input[type="number"] {
+            width: 100%;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .highlight {
+            fill: #e74c3c;
+            stroke: #c0392b;
+            stroke-width: 2px;
+            r: 8;
+        }
+        .normal {
+            fill: #3498db;
+            r: 6;
+        }
+        .similar {
+            fill: #f39c12;
+            r: 7;
+        }
+        h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        .similarity-score {
+            font-weight: bold;
+            margin-left: 5px;
+        }
+        .description {
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        .results-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .result-item {
+            padding: 8px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+            background-color: #ecf0f1;
+        }
+        .dimension-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .dimension-controls label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .loading {
+            display: none;
+            margin: 10px 0;
+            color: #7f8c8d;
+        }
+        .axis {
+            color: #7f8c8d;
+        }
+        .metrics {
+            margin-top: 15px;
+            font-size: 14px;
+        }
+        .add-embedding {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+        #embeddings-list {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Vector Database 101: Interactive Demo</h2>
+    
+    <div class="description panel">
+        <p>This interactive demo illustrates key concepts of vector databases, which store and retrieve data based on semantic similarity rather than exact matches. Vector databases convert text (or other data) into high-dimensional vectors and find results based on vector distances.</p>
+        <p><strong>How to use this demo:</strong> Search for text, add your own embeddings, explore the visualization, and learn how vector similarity works. All processing happens locally in your browser - this is a simplified model demonstrating the core concepts.</p>
+    </div>
+    
+    <div class="container">
+        <div class="visualization panel">
+            <h3>Vector Space Visualization</h3>
+            <div class="dimension-controls">
+                <div>
+                    <label for="x-dimension">X Dimension:</label>
+                    <select id="x-dimension">
+                        <option value="0">Dimension 1</option>
+                        <option value="1">Dimension 2</option>
+                        <option value="2">Dimension 3</option>
+                        <option value="3">Dimension 4</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="y-dimension">Y Dimension:</label>
+                    <select id="y-dimension">
+                        <option value="0">Dimension 1</option>
+                        <option value="1" selected>Dimension 2</option>
+                        <option value="2">Dimension 3</option>
+                        <option value="3">Dimension 4</option>
+                    </select>
+                </div>
+            </div>
+            <svg width="600" height="400"></svg>
+            <div class="tooltip"></div>
+            <div class="metrics">
+                <strong>Current Metric:</strong> <span id="distance-metric">Cosine Similarity</span>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="panel">
+                <h3>Vector Search</h3>
+                <div class="search-container">
+                    <input type="text" id="search-input" placeholder="Enter text to search in vector space...">
+                    <div class="loading" id="search-loading">Processing vector embedding...</div>
+                    <button id="search-button">Search</button>
+                </div>
+                <div>
+                    <label for="similarity-threshold">Similarity Threshold:</label>
+                    <input type="range" id="similarity-threshold" min="0" max="1" step="0.05" value="0.7">
+                    <span id="threshold-value">0.7</span>
+                </div>
+                <div>
+                    <label for="distance-method">Distance Method:</label>
+                    <select id="distance-method">
+                        <option value="cosine">Cosine Similarity</option>
+                        <option value="euclidean">Euclidean Distance</option>
+                        <option value="dot">Dot Product</option>
+                    </select>
+                </div>
+                <h4>Search Results:</h4>
+                <div id="results-container" class="results-list"></div>
+            </div>
+            
+            <div class="panel">
+                <h3>Add Custom Embeddings</h3>
+                <div class="add-embedding">
+                    <input type="text" id="new-text" placeholder="Text for embedding">
+                    <input type="number" id="new-x" placeholder="X (0-1)" min="0" max="1" step="0.1">
+                    <input type="number" id="new-y" placeholder="Y (0-1)" min="0" max="1" step="0.1">
+                </div>
+                <div class="add-embedding">
+                    <input type="number" id="new-z" placeholder="Dim 3 (0-1)" min="0" max="1" step="0.1">
+                    <input type="number" id="new-w" placeholder="Dim 4 (0-1)" min="0" max="1" step="0.1">
+                    <button id="add-button">Add Vector</button>
+                </div>
+                <h4>Current Embeddings:</h4>
+                <div id="embeddings-list" class="results-list"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Sample vector embeddings with 4 dimensions [actual LLM embeddings would have many more]
+        let data = [
+            { id: 1, text: "What is machine learning?", vector: [0.1, 0.2, 0.3, 0.1] },
+            { id: 2, text: "How do neural networks function?", vector: [0.15, 0.25, 0.35, 0.15] },
+            { id: 3, text: "Explain artificial intelligence concepts", vector: [0.2, 0.3, 0.1, 0.2] },
+            { id: 4, text: "Best practices for deep learning", vector: [0.7, 0.6, 0.8, 0.7] },
+            { id: 5, text: "Python programming tutorials", vector: [0.5, 0.4, 0.3, 0.6] },
+            { id: 6, text: "How to code a neural network", vector: [0.6, 0.5, 0.55, 0.65] },
+            { id: 7, text: "Vector databases for beginners", vector: [0.8, 0.7, 0.2, 0.3] },
+            { id: 8, text: "Semantic search implementation", vector: [0.85, 0.75, 0.25, 0.25] },
+            { id: 9, text: "Natural language processing guide", vector: [0.4, 0.45, 0.5, 0.45] },
+            { id: 10, text: "What are embedding vectors?", vector: [0.75, 0.8, 0.3, 0.2] }
+        ];
+
+        // References to HTML elements
+        const svg = d3.select("svg");
+        const width = +svg.attr("width");
+        const height = +svg.attr("height");
+        const tooltip = d3.select(".tooltip");
+        const searchInput = document.getElementById("search-input");
+        const searchButton = document.getElementById("search-button");
+        const resultsContainer = document.getElementById("results-container");
+        const xDimensionSelect = document.getElementById("x-dimension");
+        const yDimensionSelect = document.getElementById("y-dimension");
+        const distanceMethod = document.getElementById("distance-method");
+        const distanceMetricDisplay = document.getElementById("distance-metric");
+        const similarityThreshold = document.getElementById("similarity-threshold");
+        const thresholdValue = document.getElementById("threshold-value");
+        const searchLoading = document.getElementById("search-loading");
+        const addButton = document.getElementById("add-button");
+        const embeddingsList = document.getElementById("embeddings-list");
+
+        // Axis scales and labels
+        const xScale = d3.scaleLinear().domain([0, 1]).range([40, width - 20]);
+        const yScale = d3.scaleLinear().domain([0, 1]).range([height - 40, 20]);
+
+        // Add axes
+        const xAxis = d3.axisBottom(xScale);
+        const yAxis = d3.axisLeft(yScale);
+
+        svg.append("g")
+            .attr("transform", `translate(0,${height - 40})`)
+            .attr("class", "axis")
+            .call(xAxis);
+
+        svg.append("g")
+            .attr("transform", "translate(40,0)")
+            .attr("class", "axis")
+            .call(yAxis);
+
+        // Add axis labels
+        svg.append("text")
+            .attr("text-anchor", "middle")
+            .attr("x", width / 2)
+            .attr("y", height - 5)
+            .text("Dimension 1");
+
+        svg.append("text")
+            .attr("text-anchor", "middle")
+            .attr("transform", "rotate(-90)")
+            .attr("y", 15)
+            .attr("x", -height / 2)
+            .text("Dimension 2");
+
+        // Initialize circles container
+        const circlesGroup = svg.append("g").attr("class", "circles");
+        
+        // Draw the visualization
+        function updateVisualization() {
+            // Get selected dimensions
+            const xDim = parseInt(xDimensionSelect.value);
+            const yDim = parseInt(yDimensionSelect.value);
+            
+            // Update axis labels
+            svg.select("text[x='" + (width / 2) + "']")
+                .text(`Dimension ${xDim + 1}`);
+            
+            svg.select("text[x='" + (-height / 2) + "']")
+                .text(`Dimension ${yDim + 1}`);
+            
+            // Join data
+            const circles = circlesGroup.selectAll("circle")
+                .data(data, d => d.id);
+            
+            // Exit
+            circles.exit().remove();
+            
+            // Enter + Update
+            circles.enter()
+                .append("circle")
+                .merge(circles)
+                .attr("cx", d => xScale(d.vector[xDim]))
+                .attr("cy", d => yScale(d.vector[yDim]))
+                .attr("r", 6)
+                .attr("class", "normal")
+                .on("mouseover", (event, d) => {
+                    tooltip.style("display", "block")
+                        .html(`<strong>${d.text}</strong><br>
+                               Vector: [${d.vector.map(v => v.toFixed(2)).join(', ')}]`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 10) + "px");
+                })
+                .on("mouseout", () => tooltip.style("display", "none"));
+        }
+
+        // Calculate similarity based on the selected method
+        function calculateSimilarity(vectorA, vectorB, method) {
+            if (method === "cosine") {
+                return cosineSimilarity(vectorA, vectorB);
+            } else if (method === "euclidean") {
+                return 1 / (1 + euclideanDistance(vectorA, vectorB)); // Inverse to make it similarity
+            } else if (method === "dot") {
+                return dotProduct(vectorA, vectorB);
+            }
+            return 0;
+        }
+
+        // Vector similarity calculation methods
+        function cosineSimilarity(A, B) {
+            const dotProd = dotProduct(A, B);
+            const magnitudeA = Math.sqrt(dotProduct(A, A));
+            const magnitudeB = Math.sqrt(dotProduct(B, B));
+            return magnitudeA && magnitudeB ? dotProd / (magnitudeA * magnitudeB) : 0;
+        }
+
+        function euclideanDistance(A, B) {
+            return Math.sqrt(A.reduce((sum, a, i) => sum + Math.pow(a - B[i], 2), 0));
+        }
+
+        function dotProduct(A, B) {
+            return A.reduce((sum, a, i) => sum + a * B[i], 0);
+        }
+
+        // Normalize a vector to sum to 1 (for simple normalization)
+        function normalizeVector(vector) {
+            const sum = vector.reduce((a, b) => a + b, 0);
+            return vector.map(v => v / sum);
+        }
+
+        // Simulate generating an embedding (in real systems, this would call an LLM API)
+        function generateEmbedding(text) {
+            // This is a simplified simulation of embedding generation
+            // Real embedding generation requires a model or API call
+            const hash = text.split('').reduce((a, b) => {
+                a = (a << 5) - a + b.charCodeAt(0);
+                return a & a;
+            }, 0);
+            
+            // Create a deterministic but somewhat random-looking vector from the hash
+            const vector = [
+                (Math.abs(Math.sin(hash * 1)) * 0.8) + 0.1,
+                (Math.abs(Math.cos(hash * 2)) * 0.8) + 0.1,
+                (Math.abs(Math.sin(hash * 3)) * 0.8) + 0.1,
+                (Math.abs(Math.cos(hash * 4)) * 0.8) + 0.1
+            ];
+            
+            return normalizeVector(vector);
+        }
+
+        // Perform vector search
+        function performSearch() {
+            const searchTerm = searchInput.value.trim();
+            if (!searchTerm) return;
+            
+            searchLoading.style.display = "block";
+            
+            // Small timeout to simulate processing
+            setTimeout(() => {
+                // Generate "embedding" for the search query
+                const queryVector = generateEmbedding(searchTerm);
+                
+                // Reset all circles to normal state
+                circlesGroup.selectAll("circle").attr("class", "normal");
+                
+                // Calculate similarity for all vectors
+                const threshold = parseFloat(similarityThreshold.value);
+                const method = distanceMethod.value;
+                const results = data.map(item => {
+                    const similarity = calculateSimilarity(queryVector, item.vector, method);
+                    return { ...item, similarity };
+                }).sort((a, b) => b.similarity - a.similarity);
+                
+                // Display results
+                resultsContainer.innerHTML = '';
+                
+                // Highlight similar results in the visualization
+                results.forEach(result => {
+                    if (result.similarity >= threshold) {
+                        // Highlight in visualization
+                        circlesGroup.selectAll("circle")
+                            .filter(d => d.id === result.id)
+                            .attr("class", "highlight");
+                        
+                        // Add to results list
+                        const resultItem = document.createElement("div");
+                        resultItem.className = "result-item";
+                        resultItem.innerHTML = `
+                            <strong>${result.text}</strong>
+                            <span class="similarity-score">${result.similarity.toFixed(3)}</span>
+                        `;
+                        resultsContainer.appendChild(resultItem);
+                    } else if (result.similarity >= threshold * 0.7) {
+                        // Somewhat similar
+                        circlesGroup.selectAll("circle")
+                            .filter(d => d.id === result.id)
+                            .attr("class", "similar");
+                    }
+                });
+                
+                searchLoading.style.display = "none";
+            }, 300); // Simulated processing time
+        }
+
+        // Update embedding list display
+        function updateEmbeddingsList() {
+            embeddingsList.innerHTML = '';
+            data.forEach(item => {
+                const element = document.createElement("div");
+                element.className = "result-item";
+                element.innerHTML = `
+                    <strong>${item.text}</strong><br>
+                    <small>[${item.vector.map(v => v.toFixed(2)).join(', ')}]</small>
+                `;
+                embeddingsList.appendChild(element);
+            });
+        }
+
+        // Add new embedding to the database
+        function addNewEmbedding() {
+            const text = document.getElementById("new-text").value.trim();
+            const x = parseFloat(document.getElementById("new-x").value);
+            const y = parseFloat(document.getElementById("new-y").value);
+            const z = parseFloat(document.getElementById("new-z").value);
+            const w = parseFloat(document.getElementById("new-w").value);
+            
+            if (!text || isNaN(x) || isNaN(y) || isNaN(z) || isNaN(w)) {
+                alert("Please fill all fields with valid values");
+                return;
+            }
+            
+            const newId = data.length > 0 ? Math.max(...data.map(d => d.id)) + 1 : 1;
+            data.push({
+                id: newId,
+                text: text,
+                vector: [x, y, z, w]
+            });
+            
+            // Update visualization and list
+            updateVisualization();
+            updateEmbeddingsList();
+            
+            // Clear form
+            document.getElementById("new-text").value = "";
+            document.getElementById("new-x").value = "";
+            document.getElementById("new-y").value = "";
+            document.getElementById("new-z").value = "";
+            document.getElementById("new-w").value = "";
+        }
+
+        // Initialize
+        updateVisualization();
+        updateEmbeddingsList();
+
+        // Event listeners
+        searchButton.addEventListener("click", performSearch);
+        searchInput.addEventListener("keypress", e => {
+            if (e.key === "Enter") performSearch();
+        });
+        
+        xDimensionSelect.addEventListener("change", updateVisualization);
+        yDimensionSelect.addEventListener("change", updateVisualization);
+        
+        distanceMethod.addEventListener("change", () => {
+            distanceMetricDisplay.textContent = distanceMethod.options[distanceMethod.selectedIndex].text;
+        });
+        
+        similarityThreshold.addEventListener("input", () => {
+            thresholdValue.textContent = similarityThreshold.value;
+        });
+        
+        addButton.addEventListener("click", addNewEmbedding);
+    </script>
+</body>
+</html>
